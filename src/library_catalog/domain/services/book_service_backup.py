@@ -1,29 +1,25 @@
 """
-Обновленный BookService с интеграцией Open Library API.
+Сервисный слой для работы с книгами (бизнес-логика).
 """
 
 from typing import Optional
 from uuid import UUID
-from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...api.v1.schemas.book import BookCreate, BookUpdate, BookResponse, BookListResponse
 from ...data.repositories.book_repository import BookRepository
-from ...external.openlibrary.client import OpenLibraryClient
 from ..exceptions import (
     BookNotFoundException,
     BookAlreadyExistsException,
     BookNotAvailableException,
-    InvalidYearException,
-    InvalidPagesException,
     ServiceException,
 )
 from ..mappers.book_mapper import BookMapper
 
 
 class BookService:
-    """Сервис для работы с книгами с обогащением данных."""
+    """Сервис для работы с книгами."""
     
     def __init__(self, session: AsyncSession):
         """
@@ -34,11 +30,10 @@ class BookService:
         """
         self.session = session
         self.book_repository = BookRepository(session)
-        self.openlibrary_client = OpenLibraryClient()
     
     async def create_book(self, book_create: BookCreate) -> BookResponse:
         """
-        Создать новую книгу с обогащением из Open Library.
+        Создать новую книгу.
         
         Args:
             book_create: Данные для создания книги
@@ -48,26 +43,16 @@ class BookService:
         
         Raises:
             BookAlreadyExistsException: Если книга с таким названием, автором и годом уже существует
-            InvalidYearException: Если год невалиден
-            InvalidPagesException: Если количество страниц невалидно
             ServiceException: При других ошибках
         """
         try:
-            # 1. Валидация бизнес-правил
-            self._validate_book_data(book_create)
-            
-            # 2. Проверка уникальности
+            # 1. Проверяем бизнес-правила
             await self._validate_book_creation(book_create)
             
-            # 3. Обогащение данных из Open Library
-            extra_data = await self._enrich_book_data(book_create)
-            
-            # 4. Создание модели с обогащенными данными
+            # 2. Преобразуем DTO в модель
             book_model = BookMapper.create_to_model(book_create)
-            if extra_data:
-                book_model.extra = extra_data
             
-            # 5. Сохраняем в БД
+            # 3. Сохраняем в БД
             created_book = await self.book_repository.create(
                 title=book_model.title,
                 author=book_model.author,
@@ -77,22 +62,18 @@ class BookService:
                 isbn=book_model.isbn,
                 description=book_model.description,
                 available=book_model.available,
-                extra=book_model.extra,
             )
             
-            # 6. Преобразуем модель в ответ
+            # 4. Преобразуем модель в ответ
             return BookMapper.model_to_response(created_book)
             
-        except (BookAlreadyExistsException, InvalidYearException, InvalidPagesException):
-            raise
+        except BookAlreadyExistsException:
+            raise  # Пробрасываем дальше
         except Exception as e:
             raise ServiceException(
                 f"Failed to create book: {str(e)}",
                 details={"book_create": book_create.dict()}
             )
-        finally:
-            # Закрываем клиент Open Library
-            await self.openlibrary_client.close()
     
     async def get_book(self, book_id: UUID) -> BookResponse:
         """
@@ -141,8 +122,6 @@ class BookService:
         
         Raises:
             BookNotFoundException: Если книга не найдена
-            InvalidYearException: Если год невалиден
-            InvalidPagesException: Если количество страниц невалидно
             ServiceException: При других ошибках
         """
         try:
@@ -151,11 +130,8 @@ class BookService:
             if not book:
                 raise BookNotFoundException(book_id)
             
-            # 2. Валидация обновляемых данных
-            if book_update.year is not None:
-                self._validate_year(book_update.year)
-            if book_update.pages is not None:
-                self._validate_pages(book_update.pages)
+            # 2. Проверяем бизнес-правила для обновления
+            await self._validate_book_update(book_update, book)
             
             # 3. Обновляем данные
             updated_book = await self.book_repository.update(
@@ -169,7 +145,7 @@ class BookService:
             # 4. Преобразуем в ответ
             return BookMapper.model_to_response(updated_book)
             
-        except (BookNotFoundException, InvalidYearException, InvalidPagesException):
+        except (BookNotFoundException, InvalidBookDataException):
             raise
         except Exception as e:
             raise ServiceException(
@@ -391,53 +367,32 @@ class BookService:
                 year=book_create.year,
             )
     
-    def _validate_book_data(self, book_data: BookCreate) -> None:
-        """Валидация бизнес-правил для новой книги."""
-        self._validate_year(book_data.year)
-        self._validate_pages(book_data.pages)
-    
-    def _validate_year(self, year: int) -> None:
-        """Проверить что год валиден."""
-        current_year = datetime.now().year
-        if year < 1000 or year > current_year:
-            raise InvalidYearException(year)
-    
-    def _validate_pages(self, pages: int) -> None:
-        """Проверить что количество страниц валидно."""
-        if pages <= 0:
-            raise InvalidPagesException(pages)
-    
-    async def _enrich_book_data(self, book_data: BookCreate) -> Optional[dict]:
+    async def _validate_book_update(
+        self,
+        book_update: BookUpdate,
+        existing_book,
+    ) -> None:
         """
-        Обогатить данные книги из Open Library.
+        Проверить бизнес-правила при обновлении книги.
         
         Args:
-            book_data: Данные книги
+            book_update: Данные для обновления
+            existing_book: Существующая книга
         
-        Returns:
-            Обогащенные данные или None
-        
-        Note:
-            Не выбрасывает исключение если API недоступен.
+        Raises:
+            InvalidBookDataException: Если данные невалидны
         """
-        try:
-            enriched_data = await self.openlibrary_client.enrich(
-                title=book_data.title,
-                author=book_data.author,
-                isbn=book_data.isbn,
-            )
-            return enriched_data if enriched_data else None
-        except Exception as e:
-            # Логируем но не прерываем создание книги
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(
-                "Failed to enrich book data from Open Library",
-                extra={
-                    "title": book_data.title,
-                    "author": book_data.author,
-                    "isbn": book_data.isbn,
-                    "error": str(e)
-                }
-            )
-            return None
+        # Если меняется ISBN, проверяем что он уникальный
+        if book_update.isbn is not None and book_update.isbn != existing_book.isbn:
+            book_with_isbn = await self.book_repository.find_by_isbn(book_update.isbn)
+            if book_with_isbn and book_with_isbn.book_id != existing_book.book_id:
+                from ..exceptions import InvalidBookDataException
+                raise InvalidBookDataException(
+                    field="isbn",
+                    value=book_update.isbn,
+                    reason="ISBN must be unique"
+                )
+        
+        # Если меняется год, проверяем валидность
+        if book_update.year is not None:
+            BookMapper.validate_book_year(book_update.year)

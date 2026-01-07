@@ -65,3 +65,38 @@ class RepositoryException(DomainException):
 class ServiceException(DomainException):
     """Ошибка в сервисе."""
     pass
+
+# Добавляем в конец файла новые исключения для OpenLibrary
+
+class OpenLibraryException(DomainException):
+    """Ошибка Open Library API."""
+    
+    def __init__(self, message: str, details: Optional[dict] = None):
+        super().__init__(f"Open Library API error: {message}", details)
+
+
+class OpenLibraryTimeoutException(OpenLibraryException):
+    """Таймаут при обращении к Open Library API."""
+    
+    def __init__(self, timeout: float, details: Optional[dict] = None):
+        message = f"Timeout after {timeout}s"
+        super().__init__(message, details)
+        self.timeout = timeout
+
+
+class InvalidYearException(InvalidBookDataException):
+    """Невалидный год издания."""
+    
+    def __init__(self, year: int, details: Optional[dict] = None):
+        from datetime import datetime
+        current_year = datetime.now().year
+        message = f"Year {year} is invalid (must be 1000-{current_year})"
+        super().__init__("year", year, message, details)
+
+
+class InvalidPagesException(InvalidBookDataException):
+    """Невалидное количество страниц."""
+    
+    def __init__(self, pages: int, details: Optional[dict] = None):
+        message = f"Pages count must be positive, got {pages}"
+        super().__init__("pages", pages, message, details)
