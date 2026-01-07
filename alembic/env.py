@@ -60,7 +60,7 @@ async def run_async_migrations() -> None:
     """Run migrations in 'online' mode with async engine."""
     # Временно используем sync engine для миграций
     from sqlalchemy import engine_from_config
-    
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
@@ -80,6 +80,7 @@ def run_migrations_online() -> None:
     if loop.is_running():
         # Если loop уже запущен (в async приложении)
         import nest_asyncio
+
         nest_asyncio.apply()
         loop.run_until_complete(run_async_migrations())
     else:

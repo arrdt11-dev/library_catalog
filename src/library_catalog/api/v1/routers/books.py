@@ -1,9 +1,11 @@
 """
 Роутер для работы с книгами.
 """
-from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....api.deps import get_book_service
@@ -20,6 +22,8 @@ async def create_book(
 ):
     """
     Создать новую книгу.
+
+    Автоматически обогащает данные из Open Library API.
     """
     try:
         book = await book_service.create_book(book_create)
@@ -27,14 +31,14 @@ async def create_book(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create book: {str(e)}"
+            detail=f"Failed to create book: {str(e)}",
         )
 
 
 @router.get("/", response_model=List[BookResponse])
 async def list_books(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Number of records to return"),
     book_service: BookService = Depends(get_book_service),
 ):
     """
@@ -46,13 +50,13 @@ async def list_books(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch books: {str(e)}"
+            detail=f"Failed to fetch books: {str(e)}",
         )
 
 
 @router.get("/{book_id}", response_model=BookResponse)
 async def get_book(
-    book_id: int,
+    book_id: UUID,
     book_service: BookService = Depends(get_book_service),
 ):
     """
@@ -60,24 +64,22 @@ async def get_book(
     """
     try:
         book = await book_service.get_book_by_id(book_id)
-        if not book:
+        return book
+    except Exception as e:
+        if "not found" in str(e).lower():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Book not found"
+                detail=f"Book with id {book_id} not found",
             )
-        return book
-    except HTTPException:
-        raise
-    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch book: {str(e)}"
+            detail=f"Failed to fetch book: {str(e)}",
         )
 
 
 @router.put("/{book_id}", response_model=BookResponse)
 async def update_book(
-    book_id: int,
+    book_id: UUID,
     book_update: BookUpdate,
     book_service: BookService = Depends(get_book_service),
 ):
@@ -86,24 +88,22 @@ async def update_book(
     """
     try:
         book = await book_service.update_book(book_id, book_update)
-        if not book:
+        return book
+    except Exception as e:
+        if "not found" in str(e).lower():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Book not found"
+                detail=f"Book with id {book_id} not found",
             )
-        return book
-    except HTTPException:
-        raise
-    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update book: {str(e)}"
+            detail=f"Failed to update book: {str(e)}",
         )
 
 
 @router.delete("/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_book(
-    book_id: int,
+    book_id: UUID,
     book_service: BookService = Depends(get_book_service),
 ):
     """
@@ -113,13 +113,15 @@ async def delete_book(
         deleted = await book_service.delete_book(book_id)
         if not deleted:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Book not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Book not found"
             )
-    except HTTPException:
-        raise
     except Exception as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Book with id {book_id} not found",
+            )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete book: {str(e)}"
+            detail=f"Failed to delete book: {str(e)}",
         )

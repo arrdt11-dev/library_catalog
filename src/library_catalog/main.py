@@ -22,13 +22,13 @@ from .core.database import (
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     Lifespan контекст для управления жизненным циклом приложения.
-    
+
     - При запуске: инициализация БД
     - При остановке: закрытие соединений
     """
     # Startup
     print("🚀 Starting Library Catalog API...")
-    
+
     # Инициализация БД
     try:
         await init_db()
@@ -39,9 +39,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             print("⚠️  Database connection failed")
     except Exception as e:
         print(f"❌ Database initialization failed: {e}")
-    
+
     yield
-    
+
     # Shutdown
     print("🛑 Shutting down Library Catalog API...")
     await dispose_engine()
@@ -77,6 +77,7 @@ app.include_router(
     prefix=settings.api_v1_prefix,
 )
 
+
 # Базовые эндпоинты
 @app.get("/")
 async def root():
@@ -93,7 +94,7 @@ async def root():
 async def health_check():
     """Health check эндпоинт."""
     db_healthy = await check_db_connection()
-    
+
     return {
         "status": "healthy" if db_healthy else "degraded",
         "service": "library_catalog",
@@ -117,7 +118,7 @@ async def info():
 # Для запуска через python -m
 if __name__ == "__main__":
     import uvicorn
-    
+
     uvicorn.run(
         app,
         host="0.0.0.0",
