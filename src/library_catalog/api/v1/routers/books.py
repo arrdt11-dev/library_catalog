@@ -6,9 +6,8 @@ from typing import List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from ....api.deps import get_book_service
+from ....api.dependencies import get_book_service
 from ....domain.schemas.book import BookCreate, BookUpdate, BookResponse
 from ....domain.services.book_service import BookService
 

@@ -17,6 +17,12 @@ class Book(Base):
     """Модель книги."""
 
     __tablename__ = "books"
+    
+    # Индексы для часто используемых запросов
+    __table_args__ = (
+        Index("ix_books_author_title", "author", "title"),
+        Index("ix_books_genre_year", "genre", "year"),
+    )
 
     # Primary Key
     book_id: Mapped[uuid.UUID] = mapped_column(
@@ -98,10 +104,3 @@ class Book(Base):
     def __repr__(self) -> str:
         """Строковое представление."""
         return f"<Book(id={self.book_id}, title='{self.title}')>"
-
-
-# Дополнительный составной индекс для часто используемых запросов
-__table_args__ = (
-    Index("ix_books_author_title", "author", "title"),
-    Index("ix_books_genre_year", "genre", "year"),
-)

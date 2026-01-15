@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api.errors import setup_exception_handlers
 from .api.v1.routers.books import router as books_router
 from .core.config import settings
+from .core.clients import clients_manager
 from .core.database import (
     init_db,
     check_db_connection,
@@ -27,25 +28,31 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     - При остановке: закрытие соединений
     """
     # Startup
-    print("🚀 Starting Library Catalog API...")
+    print("Starting Library Catalog API...")
 
     # Инициализация БД
     try:
         await init_db()
         db_status = await check_db_connection()
         if db_status:
-            print("✅ Database connection established")
+            print("Database connection established")
         else:
-            print("⚠️  Database connection failed")
+            print("Database connection failed")
     except Exception as e:
-        print(f"❌ Database initialization failed: {e}")
+        print(f"Database initialization failed: {e}")
 
     yield
 
     # Shutdown
-    print("🛑 Shutting down Library Catalog API...")
+    print("Shutting down Library Catalog API...")
+    
+    # Закрыть все внешние клиенты
+    await clients_manager.close_all()
+    
+    # Закрыть соединения с БД
     await dispose_engine()
-    print("✅ Clean shutdown completed")
+    
+    print("Clean shutdown completed")
 
 
 # Создать приложение с lifespan
@@ -110,7 +117,7 @@ async def info():
         "app": settings.app_name,
         "environment": settings.environment,
         "debug": settings.debug,
-        "database_url": str(settings.database_url).split("@")[0] + "@***",  # Без пароля
+        "database_url": str(settings.database_url).split("@")[0] + "@***",
         "api_prefix": settings.api_v1_prefix,
     }
 
