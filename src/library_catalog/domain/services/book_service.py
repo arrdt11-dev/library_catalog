@@ -71,14 +71,18 @@ class BookService:
         book = await self.book_repo.create(
             title=book_data.title,
             author=book_data.author,
-            isbn=book_data.isbn,
-            publication_year=book_data.publication_year,
+            year=book_data.year,
             genre=book_data.genre,
+            pages=book_data.pages,
+            isbn=book_data.isbn,
             description=book_data.description,
             extra=extra,
         )
 
-        # 5. Маппинг в DTO
+        # 5. Делаем commit (теперь сервис управляет транзакциями)
+        await self.book_repo.session.commit()
+
+        # 6. Маппинг в DTO
         return BookMapper.to_response(book)
 
     async def get_book_by_id(self, book_id: UUID) -> BookResponse:
@@ -109,14 +113,18 @@ class BookService:
         if existing is None:
             raise BookNotFoundException(book_id)
 
-        # Валидация если обновляется год/страницы
-        if book_data.publication_year is not None:
-            self._validate_year(book_data.publication_year)
+        # Валидация если обновляется год
+        if book_data.year is not None:
+            self._validate_year(book_data.year)
 
         # Обновить
         updated = await self.book_repo.update(
             book_id, **book_data.dict(exclude_unset=True)
         )
+
+        if updated:
+            # Делаем commit (теперь сервис управляет транзакциями)
+            await self.book_repo.session.commit()
 
         return BookMapper.to_response(updated)
 
@@ -133,6 +141,10 @@ class BookService:
         deleted = await self.book_repo.delete(book_id)
         if not deleted:
             raise BookNotFoundException(book_id)
+        
+        # Делаем commit (теперь сервис управляет транзакциями)
+        await self.book_repo.session.commit()
+        
         return True
 
     async def get_books(
@@ -156,12 +168,11 @@ class BookService:
         offset: int = 0,
     ) -> Tuple[List[BookResponse], int]:
         """
-        Поиск книг с фильтрацией и пагинацией.
+        Поиск книг с фильтрами и пагинацией.
 
         Returns:
             tuple: (список книг, общее количество)
         """
-        # Получить книги
         books = await self.book_repo.find_by_filters(
             title=title,
             author=author,
@@ -171,7 +182,6 @@ class BookService:
             offset=offset,
         )
 
-        # Подсчитать общее количество
         total = await self.book_repo.count_by_filters(
             title=title,
             author=author,
@@ -185,7 +195,7 @@ class BookService:
 
     def _validate_book_data(self, data: BookCreate) -> None:
         """Валидация бизнес-правил для новой книги."""
-        self._validate_year(data.publication_year)
+        self._validate_year(data.year)
 
     def _validate_year(self, year: int) -> None:
         """Проверить что год валиден."""
@@ -209,12 +219,11 @@ class BookService:
             )
             return extra if extra else None
         except (OpenLibraryException, OpenLibraryTimeoutException) as e:
-            # Логируем но не прерываем создание книги
             import logging
 
             logger = logging.getLogger(__name__)
             logger.warning(
-                "Failed to enrich book data from Open Library",
+                "Не удалось обогатить данные книги из Open Library",
                 extra={
                     "title": book_data.title,
                     "author": book_data.author,

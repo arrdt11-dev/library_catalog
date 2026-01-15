@@ -2,10 +2,10 @@
 Конфигурация приложения.
 """
 
-from typing import Literal, Union
+from typing import Literal, Union, Optional
 from functools import lru_cache
 
-from pydantic import AnyUrl, PostgresDsn
+from pydantic import AnyUrl, PostgresDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,8 +16,33 @@ class Settings(BaseSettings):
     environment: Literal["development", "staging", "production"] = "development"
     debug: bool = True
 
-    # Изменяем с PostgresDsn на AnyUrl чтобы поддерживать SQLite
-    database_url: Union[PostgresDsn, AnyUrl] = "sqlite+aiosqlite:///./library.db"
+    # Настройки PostgreSQL
+    postgres_host: str = "localhost"
+    postgres_port: int = 5432
+    postgres_user: str = "postgres"
+    postgres_password: str = "postgres"
+    postgres_db: str = "library_catalog"
+    
+    database_url: Optional[Union[PostgresDsn, AnyUrl]] = None
+    
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def assemble_db_connection(cls, v: Optional[str], info):
+        """Собираем DSN для подключения к БД."""
+        if v:
+            return v
+            
+        # Если URL не указан, собираем из настроек PostgreSQL
+        values = info.data
+        return PostgresDsn.build(
+            scheme="postgresql+asyncpg",
+            username=values.get("postgres_user"),
+            password=values.get("postgres_password"),
+            host=values.get("postgres_host"),
+            port=values.get("postgres_port"),
+            path=values.get("postgres_db") or "",
+        )
+
     database_pool_size: int = 20
 
     api_v1_prefix: str = "/api/v1"
